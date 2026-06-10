@@ -1,0 +1,85 @@
+{
+  "$schema": "https://mintlify.com/schema.json",
+  "name": "SteadyPay",
+  "theme": "luma",
+  "logo": {
+    "light": "https://media.brand.dev/80a15dda-0f32-4870-b17b-e940c5fdf643.png",
+    "dark": "https://media.brand.dev/80a15dda-0f32-4870-b17b-e940c5fdf643.png"
+  },
+  "favicon": "https://media.brand.dev/8a0387fb-6cb1-4f6e-ae60-96a11ae8c836.jpg",
+  "colors": {
+    "primary": "#b52091",
+    "light": "#ca7cb8",
+    "dark": "#edd9e9"
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "Sign up",
+        "href": "https://steadpayhq.com/signup"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Dashboard",
+      "href": "https://steadpayhq.com/dashboard"
+    }
+  },
+  "footer": {
+    "socials": {
+      "twitter": "https://twitter.com/steadpayhq"
+    }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "dashboard"
+            ]
+          },
+          {
+            "group": "Web Integration",
+            "pages": [
+              "snippet/overview",
+              "snippet/events"
+            ]
+          },
+          {
+            "group": "Mobile SDKs",
+            "pages": [
+              "sdks/react-native",
+              "sdks/flutter",
+              "sdks/swift",
+              "sdks/android"
+            ]
+          },
+          {
+            "group": "Webhooks",
+            "pages": [
+              "webhooks/overview",
+              "webhooks/hmac-verification"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "API Reference",
+            "pages": [
+              "api-reference/authentication",
+              "api-reference/subscriber-status"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

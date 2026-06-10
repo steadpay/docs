@@ -1,0 +1,147 @@
+---
+title: "Subscriber Status: GET /api/subscriber-status/:tenantSlug"
+sidebarTitle: "Subscriber Status"
+description: "Retrieve real-time billing enforcement status and tier entitlements for a subscriber by providing their Stripe customer ID and your SteadyPay tenant slug."
+---
+
+The Subscriber Status endpoint returns the current billing enforcement state for any subscriber in your tenant. It is the same endpoint used by the SteadyPay enforcement snippet and all mobile SDKs — calling it directly gives you the same real-time data to power custom enforcement logic or server-side gating.
+
+**Base URL:** `https://api.steadpayhq.com`
+
+```http
+GET /api/subscriber-status/:tenantSlug
+```
+
+## Request
+
+### Path Parameters
+
+<ParamField path="tenantSlug" type="string" required>
+  Your SteadyPay tenant slug. This value appears in your dashboard URL and under **Settings → General**.
+</ParamField>
+
+### Query Parameters
+
+<ParamField query="stripe_customer_id" type="string" required>
+  The subscriber's Stripe customer ID, beginning with `cus_`. Retrieve this from your Stripe dashboard or the `customer` field on any Stripe subscription or invoice object.
+</ParamField>
+
+### Headers
+
+| Header | Value |
+|--------|-------|
+| `Authorization` | `Bearer <publishableKey>` |
+
+See [Authentication](/api-reference/authentication) for details on obtaining and using your publishable key.
+
+### Example Request
+
+<CodeGroup>
+
+```http HTTP
+GET https://api.steadpayhq.com/api/subscriber-status/acme?stripe_customer_id=cus_xxxxxxxxxxxxxxxx
+Authorization: Bearer pk_live_abc123
+```
+
+```js JavaScript
+const tenantSlug = "acme";
+const customerId = "cus_xxxxxxxxxxxxxxxx";
+
+const response = await fetch(
+  `https://api.steadpayhq.com/api/subscriber-status/${tenantSlug}?stripe_customer_id=${customerId}`,
+  {
+    headers: {
+      Authorization: "Bearer pk_live_abc123",
+    },
+  }
+);
+const data = await response.json();
+```
+
+```python Python
+import requests
+
+tenant_slug = "acme"
+customer_id = "cus_xxxxxxxxxxxxxxxx"
+
+response = requests.get(
+    f"https://api.steadpayhq.com/api/subscriber-status/{tenant_slug}",
+    params={"stripe_customer_id": customer_id},
+    headers={"Authorization": "Bearer pk_live_abc123"},
+)
+data = response.json()
+```
+
+</CodeGroup>
+
+## Response
+
+A successful request returns `200 OK` with a JSON body.
+
+```json
+{
+  "status": "warning",
+  "card_update_url": "https://steadpayhq.com/update-card?tenant=acme&token=xxx",
+  "entitlements": {
+    "powered_by_watermark": true,
+    "custom_domain": false,
+    "downstream_webhooks": false
+  }
+}
+```
+
+### Response Fields
+
+<ResponseField name="status" type='"active" | "warning" | "lockout"' required>
+  The subscriber's current billing enforcement status. Use this value to decide which enforcement UI to display — or none at all.
+
+  | Value | Meaning |
+  |-------|---------|
+  | `active` | Payment is current — no enforcement shown |
+  | `warning` | Soft decline — show a dismissable banner nudging the subscriber to update their card |
+  | `lockout` | Hard decline or exhausted retries — show a full-screen gate |
+</ResponseField>
+
+<ResponseField name="card_update_url" type="string | null">
+  A hosted URL where the subscriber can update their payment method. Present when `status` is `"warning"` and a card update URL is configured for your tenant. Redirect or link the subscriber here directly — no additional authentication is required.
+</ResponseField>
+
+<ResponseField name="entitlements" type="object">
+  Capability flags reflecting the feature set available on the subscriber's tenant tier.
+
+  <Expandable title="entitlements fields">
+    <ResponseField name="entitlements.powered_by_watermark" type="boolean" required>
+      When `true`, display the "Powered by" watermark in your UI as required by the tenant's tier.
+    </ResponseField>
+
+    <ResponseField name="entitlements.custom_domain" type="boolean" required>
+      When `true`, the subscriber's tenant is entitled to use a custom domain.
+    </ResponseField>
+
+    <ResponseField name="entitlements.downstream_webhooks" type="boolean" required>
+      When `true`, the subscriber's tenant is entitled to configure downstream webhooks.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Error Responses
+
+| HTTP Status | Meaning |
+|-------------|---------|
+| `401 Unauthorized` | The `Authorization` header is missing or contains an invalid publishable key |
+| `402 Payment Required` | Your SteadyPay subscription is suspended — reactivate it in the dashboard to resume API access |
+| `404 Not Found` | The `tenantSlug` in the path does not match any known tenant |
+
+## Unknown Subscribers
+
+If SteadyPay has not seen the provided `stripe_customer_id` before — meaning no failed payment has been recorded for that customer — the response is:
+
+```json
+{ "status": "active" }
+```
+
+SteadyPay is **fail-open** by design. An unrecognized subscriber is always treated as active, so your app never mistakenly blocks a paying user due to missing data.
+
+<Note>
+  A subscriber only appears in SteadyPay after Stripe fires a failed payment event for them. Users who have never had a payment failure will always return `"active"` until a failure is recorded.
+</Note>

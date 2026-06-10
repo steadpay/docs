@@ -1,0 +1,105 @@
+---
+title: "SteadyPay Webhooks: Downstream Billing Event Guide"
+sidebarTitle: "Overview"
+description: "Receive signed HTTP event payloads whenever a subscriber's billing state changes — failed payments, lockouts, reinstatements, and hard declines."
+---
+
+SteadyPay webhooks give your application a live feed of subscriber billing activity. Instead of polling the API, you register an HTTPS endpoint and SteadyPay POSTs a signed JSON payload the moment a billing state change occurs — keeping your database, CRM, and internal workflows in sync without delay.
+
+<Note>
+  Downstream webhooks are available on the **Scale tier** only. Upgrade your plan in **Settings → Billing** before configuring an endpoint.
+</Note>
+
+## What are downstream webhooks?
+
+When a subscriber's billing status changes — a payment fails, retries are exhausted, or a card is successfully updated — SteadyPay POSTs a signed event payload to a URL you configure. Use webhooks to sync billing state into your own database, trigger internal workflows, or update CRM records in real time, without polling the SteadyPay API.
+
+## Configuring your endpoint
+
+In the SteadyPay dashboard, navigate to **Settings → Webhooks** and enter your endpoint URL. The URL must use HTTPS. Once saved, SteadyPay immediately begins delivering events to that address as they occur.
+
+## Event types
+
+Each webhook delivery carries a single event. The table below lists every event type SteadyPay emits.
+
+| Event | Fires when |
+|-------|------------|
+| `subscriber.warning` | A soft decline is received — subscriber enters warning state |
+| `subscriber.lockout` | Retries exhausted — subscriber is locked out of your product |
+| `subscriber.reinstated` | Card update succeeds — subscriber returns to active state |
+| `subscriber.hard_declined` | A hard decline is received (card rejected; do not retry) |
+
+## Payload shape
+
+Every event shares a common base structure:
+
+```json
+{
+  "event_id": "550e8400-e29b-41d4-a716-446655440000",
+  "event": "subscriber.lockout",
+  "subscriber_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "tenant_slug": "acme",
+  "occurred_at": "2026-06-10T14:32:00.000Z"
+}
+```
+
+For `subscriber.hard_declined`, SteadyPay appends an additional `decline_code` field containing the raw Stripe decline code:
+
+```json
+{
+  "event_id": "550e8400-e29b-41d4-a716-446655440000",
+  "event": "subscriber.hard_declined",
+  "subscriber_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "tenant_slug": "acme",
+  "occurred_at": "2026-06-10T14:32:00.000Z",
+  "decline_code": "card_declined"
+}
+```
+
+### Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `event_id` | `string` (UUID) | Unique delivery ID — use this for deduplication |
+| `event` | `string` | Event type identifier |
+| `subscriber_id` | `string` (UUID) | SteadyPay's internal subscriber ID |
+| `tenant_slug` | `string` | Your tenant slug |
+| `occurred_at` | `string` (ISO 8601) | Timestamp of when the event occurred |
+| `decline_code` | `string` | _(hard\_declined only)_ Stripe decline code |
+
+## Retry schedule
+
+SteadyPay expects your endpoint to respond with a `2xx` status code within **5 seconds**. If your endpoint returns a non-2xx response or times out, SteadyPay retries the delivery on the following schedule:
+
+| Attempt | Delay after original |
+|---------|----------------------|
+| 1st retry | T + 1 minute |
+| 2nd retry | T + 5 minutes |
+| Exhausted | Marked as failed — no further retries |
+
+<Tip>
+  Return `200 OK` as quickly as possible — acknowledge the delivery first, then process the event asynchronously to avoid timeout failures under load.
+</Tip>
+
+## Deduplication
+
+SteadyPay guarantees **at-least-once delivery**. Retries mean the exact same event can arrive at your endpoint more than once. Always deduplicate on `event_id` by persisting processed IDs and short-circuiting on duplicates:
+
+```javascript
+// Example (Node.js / Express)
+app.post('/webhooks/steadpay', async (req, res) => {
+  const { event_id, event, subscriber_id } = req.body
+
+  const already = await db.processedEvents.findUnique({ where: { event_id } })
+  if (already) return res.sendStatus(200)  // ack duplicate, skip processing
+
+  await db.processedEvents.create({ data: { event_id } })
+  await handleEvent(event, subscriber_id)
+
+  res.sendStatus(200)
+})
+```
+
+## Signature verification
+
+Every webhook delivery is signed with an HMAC-SHA256 signature so you can confirm the request genuinely came from SteadyPay and that the body was not tampered with in transit. See [HMAC Verification](/webhooks/hmac-verification) for full implementation examples in Node.js, Python, and Go.

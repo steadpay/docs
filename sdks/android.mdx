@@ -1,0 +1,266 @@
+---
+title: "SteadyPay Android SDK: Billing Enforcement for Compose"
+sidebarTitle: "Android"
+description: "Add billing enforcement to Android 8.0+ apps by wrapping your Jetpack Compose UI in SteadpayGate for automatic payment decline handling."
+---
+
+The SteadyPay Android SDK delivers billing enforcement for Jetpack Compose apps with a single composable wrapper. Drop `SteadpayGate` around your authenticated UI and it handles the rest — polling your SteadyPay tenant in the background and presenting a warning banner or full-screen lockout overlay whenever a customer's payment needs attention. The minimum supported SDK version is API 26 (Android 8.0).
+
+<Steps>
+
+### Add the SDK dependency
+
+Configure a local composite build in your `settings.gradle.kts`, then declare the implementation dependency in your app module:
+
+<CodeGroup>
+
+```kotlin settings.gradle.kts
+includeBuild("path/to/steadpay-android") {
+    dependencySubstitution {
+        substitute(module("io.steadpay:compose")).using(project(":compose"))
+        substitute(module("io.steadpay:core")).using(project(":core"))
+    }
+}
+```
+
+```kotlin app/build.gradle.kts
+dependencies {
+    implementation("io.steadpay:compose")
+}
+```
+
+</CodeGroup>
+
+<Note>
+  Add `implementation("io.steadpay:core")` directly if you need the `SteadpayController` without the Compose layer.
+</Note>
+
+### Wrap your app in SteadpayGate
+
+Import `SteadpayGate` and wrap the authenticated portion of your composable tree. Pass your tenant credentials and the customer's Stripe ID:
+
+```kotlin
+import io.steadpay.compose.SteadpayGate
+
+SteadpayGate(
+    tenantSlug = "acme",
+    customerId = currentUser.stripeCustomerId,
+    publishableKey = "pk_live_abc123",
+    apiBase = "https://api.steadpayhq.com",
+) {
+    YourApp()
+}
+```
+
+`SteadpayGate` manages three billing states automatically:
+
+| Status | Behaviour |
+|--------|-----------|
+| **Active** | `YourApp` renders normally — no UI change |
+| **Warning** | A dismissable banner appears above your content |
+| **Lockout** | A full-screen overlay blocks the app until the customer updates their card |
+
+### Ship it
+
+Build and run. `SteadpayGate` starts polling as soon as the composable enters the composition. No additional lifecycle calls are required.
+
+</Steps>
+
+## Parameters
+
+Pass these arguments to `SteadpayGate`:
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `tenantSlug` | `String` | ✓ | — | Your SteadyPay tenant slug |
+| `customerId` | `String` | ✓ | — | Stripe customer ID (`cus_…`) |
+| `publishableKey` | `String` | ✓ | — | SteadyPay publishable key |
+| `apiBase` | `String` | ✓ | — | Base URL of the SteadyPay API |
+| `pollIntervalMs` | `Long` | | `600_000` | Poll interval in milliseconds |
+| `forcedStatus` | `SteadpayStatus?` | | `null` | Override status for local testing |
+| `callbacks` | `SteadpayCallbacks?` | | `null` | Lifecycle event callbacks |
+| `lockoutScreen` | `@Composable` | | built-in | Custom full-screen lockout UI |
+| `warningBanner` | `@Composable` | | built-in | Custom warning banner UI |
+| `content` | `@Composable () -> Unit` | ✓ | — | Your app's composable content |
+
+## Callbacks
+
+React to billing status changes by passing a `SteadpayCallbacks` instance. Callbacks fire on **status transitions only** — they do not fire repeatedly while a status persists.
+
+```kotlin
+import io.steadpay.compose.SteadpayGate
+
+SteadpayGate(
+    tenantSlug = "acme",
+    customerId = currentUser.stripeCustomerId,
+    publishableKey = "pk_live_abc123",
+    apiBase = "https://api.steadpayhq.com",
+    callbacks = SteadpayCallbacks(
+        onLockout = { println("locked out") },
+        onWarning = { println("warning") },
+        onActive = { println("active") },
+        onRecovered = { println("recovered") },
+        onError = { err -> println("error: $err") },
+    ),
+) {
+    YourApp()
+}
+```
+
+<Tip>
+  Use `onRecovered` to refresh entitlements or re-enable features immediately after a customer resolves a payment issue, rather than waiting for the next poll cycle.
+</Tip>
+
+## Custom Enforcement UI
+
+Replace the built-in warning banner and lockout overlay with your own branded composables. Both lambdas receive action callbacks you can wire to buttons in your custom UI.
+
+```kotlin
+import io.steadpay.compose.SteadpayGate
+
+SteadpayGate(
+    tenantSlug = "acme",
+    customerId = currentUser.stripeCustomerId,
+    publishableKey = "pk_live_abc123",
+    apiBase = "https://api.steadpayhq.com",
+    lockoutScreen = { triggerCardUpdate, _ ->
+        MyBrandedLockout(onUpdate = triggerCardUpdate)
+    },
+    warningBanner = { triggerCardUpdate, dismissWarning ->
+        MyBrandedBanner(onUpdate = triggerCardUpdate, onDismiss = dismissWarning)
+    },
+) {
+    YourApp()
+}
+```
+
+The lambda parameters are:
+
+| Parameter | Description |
+|-----------|-------------|
+| `triggerCardUpdate` | Call this to launch the Stripe card-update flow |
+| `dismissWarning` | Call this to dismiss the warning banner (warning only) |
+
+## Testing
+
+### Force a specific state
+
+Set `forcedStatus` to preview any billing state without making network requests. This is the fastest way to verify your UI during development.
+
+<Tabs>
+  <Tab title="Active">
+    ```kotlin
+    SteadpayGate(
+        tenantSlug = "acme",
+        customerId = "cus_test",
+        publishableKey = "pk_test_abc",
+        apiBase = "https://api.steadpayhq.com",
+        forcedStatus = SteadpayStatus.Active,
+    ) {
+        YourApp()
+    }
+    ```
+  </Tab>
+  <Tab title="Warning">
+    ```kotlin
+    SteadpayGate(
+        tenantSlug = "acme",
+        customerId = "cus_test",
+        publishableKey = "pk_test_abc",
+        apiBase = "https://api.steadpayhq.com",
+        forcedStatus = SteadpayStatus.Warning,
+    ) {
+        YourApp()
+    }
+    ```
+  </Tab>
+  <Tab title="Lockout">
+    ```kotlin
+    SteadpayGate(
+        tenantSlug = "acme",
+        customerId = "cus_test",
+        publishableKey = "pk_test_abc",
+        apiBase = "https://api.steadpayhq.com",
+        forcedStatus = SteadpayStatus.Lockout,
+    ) {
+        YourApp()
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+  Remove `forcedStatus` before shipping to production. With it set, `SteadpayGate` makes no network calls and always shows the forced state regardless of the customer's actual billing status.
+</Warning>
+
+### Interactive sandbox
+
+`SteadpaySandbox` wraps your app with an interactive developer overlay that lets you toggle states at runtime and inspect callback events — no code changes needed between state transitions.
+
+```kotlin
+import io.steadpay.compose.SteadpaySandbox
+
+SteadpaySandbox(
+    onLockout = { println("locked out") },
+    onWarning = { println("warning") },
+    onActive = { println("active") },
+    onError = { err -> println("error: $err") },
+) {
+    YourApp()
+}
+```
+
+A **DEV** badge appears in the bottom-right corner of the screen. Tap it to open a bottom sheet containing state pills and a live callback log.
+
+<Warning>
+  Remove `SteadpaySandbox` before shipping to production.
+</Warning>
+
+## Direct Controller Usage
+
+Use `SteadpayController` when you need billing state outside the Compose layer — for example in a custom state management solution or a View-based screen.
+
+```kotlin
+import io.steadpay.core.SteadpayController
+import io.steadpay.core.SteadpayConfig
+
+val controller = SteadpayController(
+    config = SteadpayConfig(
+        apiBase = "https://api.steadpayhq.com",
+        tenantSlug = "acme",
+        customerId = currentUser.stripeCustomerId,
+        publishableKey = "pk_live_abc123",
+    ),
+)
+controller.start()
+```
+
+Collect `stateFlow` in whatever context fits your architecture:
+
+<Tabs>
+  <Tab title="Compose">
+    ```kotlin
+    val state by controller.stateFlow.collectAsState()
+    ```
+  </Tab>
+  <Tab title="View-based">
+    ```kotlin
+    lifecycleScope.launch {
+        controller.stateFlow.collect { state ->
+            // Update your Views based on state
+        }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+Call `controller.dispose()` in `onDestroy()` or whenever the controller is no longer needed to halt polling and free resources.
+
+<CardGroup cols={2}>
+  <Card title="Swift SDK" icon="apple" href="/sdks/swift">
+    Add billing enforcement to your SwiftUI iOS or macOS app
+  </Card>
+  <Card title="API Reference" icon="code" href="/api-reference">
+    Explore SteadyPay REST endpoints and webhook events
+  </Card>
+</CardGroup>

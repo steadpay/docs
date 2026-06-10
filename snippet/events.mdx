@@ -1,0 +1,100 @@
+---
+title: "SteadyPay JS Snippet CustomEvents Reference and Usage Guide"
+sidebarTitle: "Events"
+description: "Hook into billing state transitions with document-level CustomEvents for analytics, UI updates, and in-session revenue recovery attribution."
+---
+
+The SteadyPay snippet dispatches `CustomEvent`s on `document` whenever your subscriber's billing status changes. Listen to these events to trigger analytics calls, update your own UI elements, or attribute revenue recovery to the enforcement gate — all without polling or modifying your backend.
+
+## Event Reference
+
+All events are dispatched on `document`, not `window`. Attach listeners before the snippet fires its first status check — typically as early as possible in your app's boot sequence.
+
+### `steadpay:lockout`
+
+Fires when the subscriber transitions **to** `lockout` from any prior state. This event also fires on the initial page load if the subscriber is already in lockout (`null → lockout`).
+
+```javascript
+document.addEventListener('steadpay:lockout', (event) => {
+  console.log(event.detail)
+  // { customerId: 'cus_xxx', status: 'lockout' }
+})
+```
+
+### `steadpay:warning`
+
+Fires when the subscriber transitions **to** `warning` from a non-null prior state. This event is suppressed on initial page load — a `null → warning` transition does not fire.
+
+```javascript
+document.addEventListener('steadpay:warning', (event) => {
+  console.log(event.detail)
+  // { customerId: 'cus_xxx', status: 'warning', card_update_url: 'https://...' }
+})
+```
+
+<Note>
+  `card_update_url` is only present in the `steadpay:warning` detail payload. It is absent from `steadpay:lockout` and `steadpay:active`.
+</Note>
+
+### `steadpay:active`
+
+Fires when the subscriber transitions **to** `active` from a non-null prior state via polling. This event is suppressed on initial page load — a `null → active` transition does not fire.
+
+```javascript
+document.addEventListener('steadpay:active', (event) => {
+  console.log(event.detail)
+  // { customerId: 'cus_xxx', status: 'active' }
+})
+```
+
+### `steadpay:recovered`
+
+Fires when a subscriber in lockout **completes the card update flow** inside the gate overlay in the current session. This is a conversion event and is distinct from `steadpay:active` — use it to attribute revenue recovery directly to the enforcement gate.
+
+```javascript
+document.addEventListener('steadpay:recovered', (event) => {
+  console.log(event.detail)
+  // { customerId: 'cus_xxx', status: 'active' }
+
+  // Attribute the recovery to the enforcement gate:
+  analytics.track('billing_recovered', { customerId: event.detail.customerId })
+})
+```
+
+<Tip>
+  Wire `steadpay:recovered` to your analytics pipeline on day one. It is the most actionable signal for measuring the ROI of your billing enforcement setup.
+</Tip>
+
+## Transition Table
+
+Events fire on status **transitions only** — not on every poll tick when status is unchanged. The table below maps every possible transition to the event it produces.
+
+| Transition | Event fired |
+|---|---|
+| `null → lockout` (first load) | `steadpay:lockout` |
+| `null → warning` (first load) | _(suppressed)_ |
+| `null → active` (first load) | _(suppressed)_ |
+| `active → warning` | `steadpay:warning` |
+| `active → lockout` | `steadpay:lockout` |
+| `warning → lockout` | `steadpay:lockout` |
+| `lockout → active` (via polling) | `steadpay:active` |
+| `warning → active` (via polling) | `steadpay:active` |
+| Card update completed in gate | `steadpay:recovered` |
+| Status unchanged between polls | _(nothing)_ |
+
+## `steadpay:active` vs `steadpay:recovered`
+
+Both events signal that the subscriber is now active, but they represent different recovery paths — and you should handle them differently in your analytics and UI.
+
+<CardGroup cols={2}>
+  <Card title="steadpay:active" icon="rotate">
+    The server resolved the billing issue without subscriber action — for example, a Stripe automatic retry succeeded or an operator manually reinstated the subscription. No in-session card update occurred.
+  </Card>
+  <Card title="steadpay:recovered" icon="credit-card">
+    The subscriber **completed the card update flow** inside the gate overlay in the current browser session. Use this event to attribute revenue recovery directly to SteadyPay's enforcement gate.
+  </Card>
+</CardGroup>
+
+<Warning>
+  Do not rely on `steadpay:active` alone to count enforcement-driven recoveries. A subscriber may become active via a server-side retry at any time, inflating your recovery attribution. Always use `steadpay:recovered` for gate-attributed conversion tracking.
+</Warning>

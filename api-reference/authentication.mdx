@@ -1,0 +1,68 @@
+---
+title: "SteadyPay API Authentication: Keys, Usage, and Rotation"
+sidebarTitle: "Authentication"
+description: "Authenticate SteadyPay API requests with a publishable key Bearer token. Find your key in the dashboard, and learn how to rotate it without downtime."
+---
+
+SteadyPay authenticates every API request with a **publishable key** — a lightweight credential you include as a Bearer token in the `Authorization` header. Publishable keys are safe to embed directly in client-side code such as web pages and mobile apps because they are scoped to read-only status lookups for a single tenant.
+
+## Publishable Key
+
+Your publishable key identifies your tenant and authorizes read access to subscriber status data. SteadyPay issues keys in two formats depending on the environment you are targeting:
+
+| Format | Environment |
+|--------|-------------|
+| `pk_live_…` | Production |
+| `pk_test_…` | Test mode |
+
+Find your publishable key in the SteadyPay dashboard under **Settings → API Keys**.
+
+<Note>
+  Test-mode keys (`pk_test_…`) only return data for subscribers created in your test environment. Use a production key (`pk_live_…`) when going live.
+</Note>
+
+## Usage
+
+Pass your publishable key as a Bearer token in the `Authorization` header of every request.
+
+<CodeGroup>
+
+```http HTTP
+GET https://api.steadpayhq.com/api/subscriber-status/acme?stripe_customer_id=cus_xxx
+Authorization: Bearer pk_live_abc123
+```
+
+```js JavaScript
+const response = await fetch(
+  "https://api.steadpayhq.com/api/subscriber-status/acme?stripe_customer_id=cus_xxx",
+  {
+    headers: {
+      Authorization: "Bearer pk_live_abc123",
+    },
+  }
+);
+const data = await response.json();
+```
+
+```python Python
+import requests
+
+response = requests.get(
+    "https://api.steadpayhq.com/api/subscriber-status/acme",
+    params={"stripe_customer_id": "cus_xxx"},
+    headers={"Authorization": "Bearer pk_live_abc123"},
+)
+data = response.json()
+```
+
+</CodeGroup>
+
+## Key Rotation
+
+Rotate your publishable key at any time from the dashboard under **Settings → API Keys → Rotate**. The previous key is invalidated immediately upon rotation.
+
+<Warning>
+  After rotating, update the key in all enforcement snippets and SDKs. The old key will return `401 Unauthorized` immediately — there is no grace period.
+</Warning>
+
+Bootstrap-tier accounts use an **atomic swap** — the new key is issued in a single operation with no gap between the old key expiring and the new key becoming active.

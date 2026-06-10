@@ -1,0 +1,111 @@
+---
+title: "Verify SteadyPay Webhook HMAC Signatures in Your App"
+sidebarTitle: "HMAC Verification"
+description: "Authenticate incoming SteadyPay webhook requests by verifying the HMAC-SHA256 signature on every delivery before processing the payload."
+---
+
+Every webhook delivery SteadyPay sends includes an `X-Steadpay-Signature` header. Verify this signature before processing any payload — it confirms the request genuinely originated from SteadyPay and that the body has not been modified in transit.
+
+## Signature format
+
+SteadyPay sets the header in the following format:
+
+```
+X-Steadpay-Signature: sha256=<hex-encoded-hmac>
+```
+
+The value after `sha256=` is an HMAC-SHA256 digest of the **raw request body**, keyed with your per-tenant webhook signing secret.
+
+## Getting your signing secret
+
+In the SteadyPay dashboard, navigate to **Settings → Webhooks**. Your signing secret is displayed directly alongside your configured webhook URL. Treat this value like a password — store it in an environment variable, never in source code.
+
+## Verification examples
+
+The core steps are identical across languages: read the raw request bytes, compute `HMAC-SHA256` over them using your secret, prefix the result with `sha256=`, then compare against the header using a constant-time equality function.
+
+<CodeGroup>
+
+```javascript Node.js
+const crypto = require('crypto')
+
+function verifySignature(rawBody, signatureHeader, secret) {
+  const expected = 'sha256=' + crypto
+    .createHmac('sha256', secret)
+    .update(rawBody)
+    .digest('hex')
+
+  return crypto.timingSafeEqual(
+    Buffer.from(signatureHeader),
+    Buffer.from(expected)
+  )
+}
+
+// Express — use express.raw() to preserve the raw body bytes
+app.post('/webhooks/steadpay', express.raw({ type: 'application/json' }), (req, res) => {
+  const sig = req.headers['x-steadpay-signature']
+  if (!verifySignature(req.body, sig, process.env.STEADPAY_WEBHOOK_SECRET)) {
+    return res.status(400).send('Invalid signature')
+  }
+
+  const payload = JSON.parse(req.body)
+  // process payload...
+  res.sendStatus(200)
+})
+```
+
+```python Python
+import hmac
+import hashlib
+import os
+
+def verify_signature(raw_body: bytes, signature_header: str, secret: str) -> bool:
+    expected = 'sha256=' + hmac.new(
+        secret.encode(),
+        raw_body,
+        hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(signature_header, expected)
+
+# Flask example
+@app.route('/webhooks/steadpay', methods=['POST'])
+def steadpay_webhook():
+    sig = request.headers.get('X-Steadpay-Signature', '')
+    if not verify_signature(request.data, sig, os.environ['STEADPAY_WEBHOOK_SECRET']):
+        return 'Invalid signature', 400
+
+    payload = request.get_json()
+    # process payload...
+    return '', 200
+```
+
+```go Go
+import (
+    "crypto/hmac"
+    "crypto/sha256"
+    "encoding/hex"
+)
+
+func verifySignature(rawBody []byte, signatureHeader, secret string) bool {
+    mac := hmac.New(sha256.New, []byte(secret))
+    mac.Write(rawBody)
+    expected := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+    return hmac.Equal([]byte(signatureHeader), []byte(expected))
+}
+```
+
+</CodeGroup>
+
+## Important notes
+
+<Warning>
+  **Always compute the HMAC over the raw request body** — read the bytes before any JSON parsing takes place. Parsing the body and then re-serializing it can alter whitespace or key ordering, producing a digest that will never match the signature SteadyPay sent.
+</Warning>
+
+<Warning>
+  **Use a constant-time comparison function** to compare the signatures. Standard equality checks (`===`, `==`) short-circuit on the first mismatched byte, leaking timing information that an attacker can exploit. Use `crypto.timingSafeEqual` (Node.js), `hmac.compare_digest` (Python), or `hmac.Equal` (Go) instead.
+</Warning>
+
+<Note>
+  **SteadyPay does not include a timestamp in the signature.** The signature covers the body only. If you need to order events or detect delayed deliveries, use the `occurred_at` field in the payload rather than the request timestamp.
+</Note>

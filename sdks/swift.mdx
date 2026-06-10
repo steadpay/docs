@@ -1,0 +1,265 @@
+---
+title: "SteadyPay Swift SDK: Billing Enforcement for iOS and macOS"
+sidebarTitle: "Swift"
+description: "Enforce billing on iOS 15+ and macOS 13+ by wrapping your SwiftUI app in SteadpayGate for automatic soft and hard decline handling."
+---
+
+The SteadyPay Swift SDK adds a billing enforcement layer to any SwiftUI app with a single view wrapper. Once installed, `SteadpayGate` polls your SteadyPay tenant in the background and surfaces a warning banner or full-screen lockout overlay whenever a customer's payment requires attention — no extra routing logic required.
+
+<Steps>
+
+### Install the package
+
+**Option A — Xcode GUI**
+
+Open your project in Xcode, choose **File → Add Packages**, and enter the repository URL:
+
+```text
+https://github.com/steadpay/steadpay-swift
+```
+
+Select **Up to Next Major Version** starting from `1.0.0`, then add **SteadpayUI** to your app target.
+
+**Option B — Package.swift**
+
+<CodeGroup>
+
+```swift Package.swift — add dependency
+.package(url: "https://github.com/steadpay/steadpay-swift.git", from: "1.0.0")
+```
+
+```swift Package.swift — add target product
+.target(
+    name: "YourApp",
+    dependencies: [
+        .product(name: "SteadpayUI", package: "steadpay-swift"),
+    ]
+)
+```
+
+</CodeGroup>
+
+<Note>
+  Add the optional `Steadpay` product alongside `SteadpayUI` if you need direct client access for UIKit or Combine-based usage.
+</Note>
+
+### Wrap your app in SteadpayGate
+
+Import `SteadpayUI` and wrap the authenticated portion of your view hierarchy. Pass your tenant credentials and the customer's Stripe ID:
+
+```swift
+import SteadpayUI
+
+SteadpayGate(
+    tenantSlug: "acme",
+    customerId: currentUser.stripeCustomerId,
+    publishableKey: "pk_live_abc123",
+    apiBase: "https://api.steadpayhq.com"
+) {
+    YourApp()
+}
+```
+
+`SteadpayGate` manages three billing states automatically:
+
+| Status | Behaviour |
+|--------|-----------|
+| **Active** | `YourApp` renders normally — no UI change |
+| **Warning** | A dismissable banner appears above your content |
+| **Lockout** | A full-screen overlay blocks the app until the customer updates their card |
+
+### Ship it
+
+Build and run. `SteadpayGate` begins polling immediately after the view appears. You do not need to call any start or stop methods from SwiftUI.
+
+</Steps>
+
+## Parameters
+
+Pass these arguments to `SteadpayGate`:
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `tenantSlug` | `String` | ✓ | — | Your SteadyPay tenant slug |
+| `customerId` | `String` | ✓ | — | Stripe customer ID (`cus_…`) |
+| `publishableKey` | `String` | ✓ | — | SteadyPay publishable key |
+| `apiBase` | `String` | ✓ | — | Base URL of the SteadyPay API |
+| `pollInterval` | `TimeInterval` | | `600` | Status poll interval in seconds |
+| `forcedStatus` | `SteadpayStatus?` | | `nil` | Override status for local testing |
+| `callbacks` | `SteadpayCallbacks?` | | `nil` | Lifecycle event callbacks |
+| `lockoutScreen` | view builder | | built-in | Custom full-screen lockout UI |
+| `warningBanner` | view builder | | built-in | Custom warning banner UI |
+| `content` | `@ViewBuilder` | ✓ | — | Your app's view hierarchy |
+
+## Callbacks
+
+React to billing status changes by passing a `SteadpayCallbacks` value. Callbacks fire on **status transitions only** — they do not fire repeatedly while a status persists.
+
+```swift
+import SteadpayUI
+
+SteadpayGate(
+    tenantSlug: "acme",
+    customerId: currentUser.stripeCustomerId,
+    publishableKey: "pk_live_abc123",
+    apiBase: "https://api.steadpayhq.com",
+    callbacks: SteadpayCallbacks(
+        onLockout: { print("locked out") },
+        onWarning: { print("warning") },
+        onActive: { print("active") },
+        onRecovered: { print("recovered") },
+        onError: { err in print("error: \(err)") }
+    )
+) {
+    YourApp()
+}
+```
+
+<Tip>
+  Use `onRecovered` to refresh entitlements or re-enable features immediately after a customer resolves a payment issue, rather than waiting for the next poll cycle.
+</Tip>
+
+## Custom Enforcement UI
+
+Replace the built-in warning banner and lockout overlay with your own branded components. Both closures receive action callbacks you can wire to buttons in your custom UI.
+
+```swift
+import SteadpayUI
+
+SteadpayGate(
+    tenantSlug: "acme",
+    customerId: currentUser.stripeCustomerId,
+    publishableKey: "pk_live_abc123",
+    apiBase: "https://api.steadpayhq.com",
+    lockoutScreen: { triggerCardUpdate, _ in
+        AnyView(MyBrandedLockout(onUpdate: triggerCardUpdate))
+    },
+    warningBanner: { triggerCardUpdate, dismissWarning in
+        AnyView(MyBrandedBanner(onUpdate: triggerCardUpdate, onDismiss: dismissWarning))
+    }
+) {
+    YourApp()
+}
+```
+
+<Note>
+  Wrap every custom view in `AnyView(...)`. The closures use type-erased return types to keep the API flexible across Swift versions.
+</Note>
+
+The closure parameters are:
+
+| Parameter | Description |
+|-----------|-------------|
+| `triggerCardUpdate` | Call this to launch the Stripe card-update flow |
+| `dismissWarning` | Call this to dismiss the warning banner (warning only) |
+
+## Testing
+
+### Force a specific state
+
+Set `forcedStatus` to preview any billing state without making network requests. This is the fastest way to verify your UI during development.
+
+<Tabs>
+  <Tab title="Active">
+    ```swift
+    SteadpayGate(
+        tenantSlug: "acme",
+        customerId: "cus_test",
+        publishableKey: "pk_test_abc",
+        apiBase: "https://api.steadpayhq.com",
+        forcedStatus: .active
+    ) {
+        YourApp()
+    }
+    ```
+  </Tab>
+  <Tab title="Warning">
+    ```swift
+    SteadpayGate(
+        tenantSlug: "acme",
+        customerId: "cus_test",
+        publishableKey: "pk_test_abc",
+        apiBase: "https://api.steadpayhq.com",
+        forcedStatus: .warning
+    ) {
+        YourApp()
+    }
+    ```
+  </Tab>
+  <Tab title="Lockout">
+    ```swift
+    SteadpayGate(
+        tenantSlug: "acme",
+        customerId: "cus_test",
+        publishableKey: "pk_test_abc",
+        apiBase: "https://api.steadpayhq.com",
+        forcedStatus: .lockout
+    ) {
+        YourApp()
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+  Remove `forcedStatus` before shipping to production. With it set, `SteadpayGate` makes no network calls and always shows the forced state regardless of the customer's actual billing status.
+</Warning>
+
+### Interactive sandbox
+
+`SteadpaySandbox` wraps your app with an interactive developer overlay that lets you toggle states at runtime and inspect callback events — no code changes needed between state transitions.
+
+```swift
+import SteadpayUI
+
+SteadpaySandbox(
+    onLockout: { print("locked out") },
+    onWarning: { print("warning") },
+    onActive: { print("active") },
+    onError: { err in print("error: \(err)") }
+) {
+    YourApp()
+}
+```
+
+A **DEV** badge appears in the bottom-right corner of the screen. Tap it to open a sheet containing state pills and a live callback log.
+
+<Warning>
+  Remove `SteadpaySandbox` before shipping to production.
+</Warning>
+
+## UIKit and Non-SwiftUI Usage
+
+If your app uses UIKit or another architecture, import the `Steadpay` target and drive state through a `SteadpayClient` with Combine.
+
+```swift
+import Steadpay
+
+let client = SteadpayClient(
+    config: SteadpayConfig(
+        apiBase: "https://api.steadpayhq.com",
+        tenantSlug: "acme",
+        customerId: currentUser.stripeCustomerId,
+        publishableKey: "pk_live_abc123"
+    )
+)
+client.start()
+
+client.$status
+    .receive(on: DispatchQueue.main)
+    .sink { status in
+        // Update your UIKit views based on status
+    }
+    .store(in: &cancellables)
+```
+
+Call `client.stop()` in `deinit` or `viewDidDisappear(_:)` to halt polling and release resources.
+
+<CardGroup cols={2}>
+  <Card title="Android SDK" icon="android" href="/sdks/android">
+    Add billing enforcement to your Jetpack Compose app
+  </Card>
+  <Card title="API Reference" icon="code" href="/api-reference">
+    Explore SteadyPay REST endpoints and webhook events
+  </Card>
+</CardGroup>

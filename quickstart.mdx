@@ -1,0 +1,89 @@
+---
+title: "Quickstart: Go Live with SteadyPay in Under 10 Minutes"
+sidebarTitle: "Quickstart"
+description: "Create your SteadyPay account, connect Stripe, add the enforcement snippet to your web app, and verify the gate overlay end-to-end."
+---
+
+This guide walks you through the fastest path to live billing enforcement for a web application. If you're integrating into a mobile app, complete steps 1–3 then jump to the [mobile apps section](#mobile-apps) at the bottom.
+
+<Steps>
+  <Step title="Create your SteadyPay account">
+    [Sign up at steadpayhq.com/signup](https://steadpayhq.com/signup). During signup, SteadyPay will prompt you to connect your Stripe account via OAuth — approve the connection so SteadyPay can receive webhook events on your behalf.
+
+    <Tip>
+      Use a Stripe account that is already in **live mode**. SteadyPay reads real invoice and decline data; test-mode connections will not produce live enforcement events.
+    </Tip>
+  </Step>
+
+  <Step title="Get your publishable key">
+    In the SteadyPay dashboard, navigate to **Settings → API Keys** and copy your **publishable key**. Live mode keys start with `pk_live_…`; test mode keys start with `pk_test_…`. This key is safe to embed in client-side code — it identifies your tenant but cannot be used to make authenticated API calls.
+  </Step>
+
+  <Step title="Register your Stripe webhook">
+    In your [Stripe dashboard](https://dashboard.stripe.com/webhooks), create a new webhook endpoint with the following details:
+
+    **Endpoint URL:**
+
+    ```
+    https://api.steadpayhq.com/webhooks/stripe
+    ```
+
+    **Events to subscribe:**
+    - `invoice.payment_failed`
+    - `invoice.payment_succeeded`
+
+    After saving, Stripe will display a **signing secret** (`whsec_…`). Copy it and paste it into the SteadyPay dashboard under **Settings → Stripe**.
+
+    <Warning>
+      SteadyPay validates every incoming Stripe event using this signing secret. If the secret is missing or incorrect, SteadyPay will reject all webhook deliveries and enforcement will not function.
+    </Warning>
+  </Step>
+
+  <Step title="Add the enforcement snippet">
+    Paste the following `<script>` tag into every authenticated page of your web app, replacing the placeholder values with your real tenant slug, publishable key, and the currently signed-in subscriber's Stripe customer ID:
+
+    ```html
+    <script
+      src="https://api.steadpayhq.com/v1/enforce.js"
+      data-tenant-slug="YOUR_TENANT_SLUG"
+      data-publishable-key="pk_live_YOUR_KEY"
+      data-customer-id="cus_SUBSCRIBER_STRIPE_ID"
+    ></script>
+    ```
+
+    The snippet runs immediately on page load, calls the SteadyPay status API, and renders the appropriate UI — a dismissable warning banner or a full-screen lockout overlay — without any additional JavaScript required from you.
+
+    <Note>
+      `data-customer-id` must be the currently signed-in subscriber's Stripe customer ID (`cus_…`). Render this value **server-side** as part of your HTML so the correct ID is embedded before the script executes. Never hardcode a single customer ID.
+    </Note>
+  </Step>
+
+  <Step title="Verify the gate overlay">
+    In the SteadyPay dashboard, go to **Subscribers** and find your test subscriber. Use the **Force status** control to set their status to `lockout`, then reload the corresponding page in your app. You should see the full-screen gate overlay appear immediately.
+
+    Once you confirm the overlay appears, use **Force status** again to reset the subscriber back to `active`.
+
+    <Tip>
+      Run this verification step in a staging or development environment before deploying to production. The **Force status** control works on any subscriber regardless of their actual Stripe payment state.
+    </Tip>
+  </Step>
+</Steps>
+
+## Mobile apps
+
+If you're integrating SteadyPay into a mobile application instead of a web app, skip step 4 above and follow the SDK guide for your platform:
+
+<CardGroup cols={2}>
+  <Card title="React Native SDK" icon="react" href="/sdks/react-native">
+    Enforce billing gates in React Native applications.
+  </Card>
+  <Card title="Flutter SDK" icon="mobile" href="/sdks/flutter">
+    Native enforcement for Flutter on iOS and Android.
+  </Card>
+  <Card title="Swift SDK" icon="apple" href="/sdks/swift">
+    SwiftUI and UIKit support for iOS and macOS.
+  </Card>
+  <Card title="Android SDK" icon="android" href="/sdks/android">
+    Jetpack Compose support for Android.
+  </Card>
+</CardGroup>

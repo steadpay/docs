@@ -1,0 +1,91 @@
+---
+title: "Dashboard Guide: Monitor Subscribers and Billing Events"
+sidebarTitle: "Dashboard"
+description: "Navigate the SteadyPay dashboard to inspect subscriber statuses, review retry history, manage API keys, and configure your Stripe connection."
+---
+
+The SteadyPay dashboard is your central view into the enforcement state of every subscriber in your Stripe account. Log in at [steadpayhq.com/dashboard](https://steadpayhq.com/dashboard) with your SteadyPay account credentials.
+
+## Subscribers tab
+
+The **Subscribers** tab lists every subscriber SteadyPay has seen across your connected Stripe account. Use it to inspect the current enforcement state of individual subscribers or to manually override a subscriber's status for testing.
+
+| Column | Description |
+|--------|-------------|
+| **Stripe Customer ID** | The `cus_…` identifier from Stripe that uniquely identifies the subscriber |
+| **Status** | The subscriber's current enforcement status: `active`, `warning`, or `lockout` |
+| **Last seen** | The timestamp of the most recent webhook SteadyPay received for this subscriber |
+
+### Subscriber statuses
+
+| Status | What it means | What the subscriber sees |
+|--------|--------------|--------------------------|
+| **Active** | Payment is current; no enforcement in effect | Nothing — the app loads normally |
+| **Warning** | A soft decline was received; a retry is scheduled | A dismissable banner prompting a card update |
+| **Lockout** | Retries are exhausted or a hard decline was received | A full-screen overlay that cannot be dismissed |
+
+<Note>
+  Use the **Force status** control on any subscriber row to manually set their status to `active`, `warning`, or `lockout`. This is useful for end-to-end testing without needing to trigger a real payment failure.
+</Note>
+
+## Retry Log tab
+
+The **Retry Log** tab shows the scheduled and completed retry attempts for every subscriber currently in `warning` or `lockout` state. SteadyPay follows a fixed retry schedule after the initial decline:
+
+| Retry | Timing | Outcome on failure |
+|-------|--------|--------------------|
+| **Day 1** | 24 hours after the initial decline | Remains in `warning` |
+| **Day 3** | 3 days after the initial decline | Remains in `warning` |
+| **Day 7** | 7 days after the initial decline (final retry) | Transitions to `lockout` |
+
+Each entry in the log displays the outcome (`succeeded` or `failed`) and the Stripe charge attempt ID so you can cross-reference directly in your Stripe dashboard.
+
+## Webhook delivery log
+
+<Note>
+  The Webhook delivery log is available on the **Scale tier** only. Upgrade your plan under **Settings → Billing** to access this feature.
+</Note>
+
+The **Webhooks** tab records every downstream webhook delivery attempt SteadyPay makes to your configured endpoint. Each entry shows:
+
+- **Event type** — the SteadyPay event that triggered the delivery (for example, `subscriber.status_changed`)
+- **Delivery status** — `pending`, `delivered`, or `exhausted`
+- **HTTP response code** — the status code your endpoint returned
+- **Attempt count and next retry** — how many delivery attempts have been made and when the next one is scheduled
+
+SteadyPay retries failed deliveries with exponential backoff. Once all retries are exhausted, the entry moves to `exhausted` and no further attempts are made.
+
+## Settings
+
+### API Keys
+
+Under **Settings → API Keys**, you can view and manage the publishable key used by the enforcement snippet and all mobile SDKs.
+
+- **View** your current publishable key (`pk_live_…`)
+- **Rotate** the key to generate a new one — the previous key is **invalidated immediately** upon rotation
+
+<Warning>
+  Rotating your publishable key will break enforcement for any deployed snippet or SDK that still uses the old key. Update every integration with the new key before rotating in production.
+</Warning>
+
+### Webhooks
+
+<Note>
+  Downstream webhook settings are available on the **Scale tier** only.
+</Note>
+
+Under **Settings → Webhooks**, configure where SteadyPay sends real-time status-change events:
+
+- **Downstream webhook URL** — the HTTPS endpoint on your server that will receive SteadyPay events (HTTP URLs are not accepted)
+- **Signing secret** — the HMAC secret SteadyPay uses to sign outgoing payloads; verify this signature on your server using the [HMAC verification guide](/webhooks/hmac-verification)
+
+### Stripe
+
+Under **Settings → Stripe**, verify and maintain your Stripe integration:
+
+- Confirm that your **Stripe account** is connected via OAuth
+- Confirm that your **webhook signing secret** (`whsec_…`) matches the one shown in your Stripe dashboard for the SteadyPay endpoint
+
+<Warning>
+  If the signing secret is outdated or missing, SteadyPay will reject all incoming Stripe webhook events. This means payment failures will not be detected and enforcement will silently stop functioning. Re-enter the correct secret any time you rotate it in Stripe.
+</Warning>

@@ -1,0 +1,245 @@
+---
+title: "Flutter SDK: Enforce Billing States with SteadyPay"
+sidebarTitle: "Flutter"
+description: "Gate your Flutter app behind SteadyPay's billing enforcement layer with a widget that shows warnings or locks out subscribers with expired payment methods."
+---
+
+The SteadyPay Flutter SDK provides a `SteadpayGate` widget that wraps your authenticated app content and automatically enforces billing status — surfacing a dismissable warning banner for soft declines or a full-screen lockout overlay for hard declines and exhausted retries. It requires no platform channels and no native configuration beyond adding the package dependency.
+
+## Quick start
+
+<Steps>
+
+<Step title="Add the dependency">
+
+Add `steadpay_flutter` to your `pubspec.yaml`:
+
+```yaml
+dependencies:
+  steadpay_flutter:
+    git:
+      url: https://github.com/steadpay/steadpay-flutter.git
+```
+
+Then fetch dependencies:
+
+```sh
+flutter pub get
+```
+
+</Step>
+
+<Step title="Wrap your authenticated UI">
+
+Import the package and wrap the widget tree that should be gated — typically whatever renders after a user signs in:
+
+```dart
+import 'package:steadpay_flutter/steadpay_flutter.dart';
+
+SteadpayGate(
+  apiBase: 'https://api.steadpayhq.com',
+  tenantSlug: 'acme',
+  customerId: currentUser.stripeCustomerId,
+  publishableKey: 'pk_live_abc123',
+  child: YourApp(),
+)
+```
+
+`SteadpayGate` polls the SteadyPay API and reacts to three billing statuses:
+
+- **Active** — `YourApp` renders normally with no interruption
+- **Warning** — a dismissable banner appears above your content (soft decline)
+- **Lockout** — a full-screen overlay replaces all content until the subscriber updates their card (hard decline or exhausted retries)
+
+</Step>
+
+</Steps>
+
+## Parameters
+
+Configure `SteadpayGate` with the following parameters.
+
+<ParamField path="apiBase" type="String" required>
+  Base URL of the SteadyPay API. Use `https://api.steadpayhq.com` for production.
+</ParamField>
+
+<ParamField path="tenantSlug" type="String" required>
+  Your SteadyPay tenant slug, found in the dashboard under **Settings → General**.
+</ParamField>
+
+<ParamField path="customerId" type="String" required>
+  The Stripe customer ID for the signed-in user, in the form `cus_…`. Source this from your auth session rather than hard-coding it.
+</ParamField>
+
+<ParamField path="publishableKey" type="String" required>
+  Your SteadyPay publishable key. Safe to include in client-side code — this key cannot modify billing data.
+</ParamField>
+
+<ParamField path="pollInterval" type="Duration" default="Duration(minutes: 10)">
+  How often the SDK polls the SteadyPay API for a status update. Expressed as a Dart `Duration`. Avoid setting this below one minute.
+</ParamField>
+
+<ParamField path="forcedStatus" type="SteadpayStatus?" default="null">
+  Force a specific `SteadpayStatus` value for local testing. When non-null, no network calls are made. Remove before shipping to production.
+</ParamField>
+
+<ParamField path="callbacks" type="SteadpayCallbacks?" default="null">
+  A `SteadpayCallbacks` instance containing lifecycle hooks that fire on status transitions. See [Callbacks](#callbacks) for details.
+</ParamField>
+
+<ParamField path="lockoutScreen" type="LockoutScreenBuilder?" default="built-in">
+  A builder function that returns your custom full-screen lockout widget. Receives `triggerCardUpdate` and an optional `entitlements` map. When `null`, the built-in lockout screen is used.
+</ParamField>
+
+<ParamField path="warningBanner" type="WarningBannerBuilder?" default="built-in">
+  A builder function that returns your custom warning banner widget. Receives `triggerCardUpdate` and `dismissWarning`. When `null`, the built-in banner is used.
+</ParamField>
+
+<ParamField path="child" type="Widget" required>
+  The widget subtree to render inside the gate. Shown for all statuses except `lockout`.
+</ParamField>
+
+## Callbacks
+
+Attach lifecycle callbacks by passing a `SteadpayCallbacks` instance to the `callbacks` parameter.
+
+```dart
+SteadpayGate(
+  apiBase: 'https://api.steadpayhq.com',
+  tenantSlug: 'acme',
+  customerId: currentUser.stripeCustomerId,
+  publishableKey: 'pk_live_abc123',
+  callbacks: SteadpayCallbacks(
+    onLockout: () => print('locked out'),
+    onWarning: () => print('warning'),
+    onActive: () => print('active'),
+    onRecovered: () => print('recovered'),
+    onError: (err) => print('error: $err'),
+  ),
+  child: YourApp(),
+)
+```
+
+<Note>
+  Callbacks fire on status **transitions** only — not on every poll tick. `onActive` does not fire on every successful poll while the account is already active; it fires only when the status changes from something else to `active`.
+</Note>
+
+| Callback | Fires when |
+|----------|-----------|
+| `onLockout` | Status transitions **to** lockout, including on first load |
+| `onWarning` | Status transitions **to** warning from a non-null prior state |
+| `onActive` | Status transitions **to** active via polling |
+| `onRecovered` | Subscriber completes the card update flow |
+| `onError` | Network failure or an unexpected API response |
+
+## Custom enforcement UI
+
+Replace either the built-in lockout screen or the warning banner with your own branded widgets by providing builder functions. Each builder receives action callbacks so your custom UI can trigger the card-update flow or dismiss the banner.
+
+```dart
+SteadpayGate(
+  apiBase: 'https://api.steadpayhq.com',
+  tenantSlug: 'acme',
+  customerId: currentUser.stripeCustomerId,
+  publishableKey: 'pk_live_abc123',
+  lockoutScreen: ({required triggerCardUpdate, entitlements}) =>
+      MyBrandedLockout(onUpdate: triggerCardUpdate),
+  warningBanner: ({required triggerCardUpdate, required dismissWarning}) =>
+      MyBrandedBanner(onUpdate: triggerCardUpdate, onDismiss: dismissWarning),
+  child: YourApp(),
+)
+```
+
+<Tip>
+  Use the `entitlements` map passed to `lockoutScreen` to personalise the lockout message — for example, listing the specific features the subscriber will regain access to after updating their card.
+</Tip>
+
+## Testing
+
+### Force a status (no network calls)
+
+Pass a `SteadpayStatus` value to `forcedStatus` to lock the gate into a specific state during development. No API calls are made when this parameter is non-null.
+
+```dart
+SteadpayGate(
+  apiBase: 'https://api.steadpayhq.com',
+  tenantSlug: 'acme',
+  customerId: 'cus_test',
+  publishableKey: 'pk_test_abc',
+  forcedStatus: SteadpayStatus.lockout,
+  child: YourApp(),
+)
+```
+
+<Warning>
+  Remove `forcedStatus` before shipping to production. Leaving it set will prevent real billing statuses from ever being fetched.
+</Warning>
+
+### Interactive sandbox
+
+`SteadpaySandbox` lets you toggle between all billing states at runtime without a real SteadyPay account or Stripe customer. Use it in your development entry point and remove it before release:
+
+```dart
+SteadpaySandbox(
+  onLockout: () => print('locked out'),
+  onWarning: () => print('warning'),
+  onActive: () => print('active'),
+  onError: (err) => print('error: $err'),
+  child: YourApp(),
+)
+```
+
+A `DEV` badge appears in the bottom-right corner of the screen. Tap it to open a control sheet with state pills for switching between `active`, `warning`, and `lockout`, plus a live callback log showing every fired event.
+
+<Warning>
+  Remove `SteadpaySandbox` before shipping to production. It makes no API calls and will never reflect real subscriber billing state.
+</Warning>
+
+<Tip>
+  Use `SteadpaySandbox` during design reviews or QA walkthroughs to demonstrate every billing state to stakeholders without needing a test Stripe account.
+</Tip>
+
+## Advanced usage
+
+Use `SteadpayController` when you manage state outside the widget tree — for example with Riverpod, Bloc, or a custom `ChangeNotifier`. Create a controller with a `SteadpayConfig`, start polling, and subscribe to the `stateStream`:
+
+```dart
+final controller = SteadpayController(
+  SteadpayConfig(
+    apiBase: 'https://api.steadpayhq.com',
+    tenantSlug: 'acme',
+    customerId: currentUser.stripeCustomerId,
+    publishableKey: 'pk_live_abc123',
+  ),
+)
+controller.start()
+
+StreamBuilder<SteadpayState>(
+  stream: controller.stateStream,
+  builder: (context, snap) {
+    final state = snap.data;
+    if (state == null) return const CircularProgressIndicator();
+    // handle state
+    return YourContent(billingState: state);
+  },
+)
+```
+
+<Note>
+  Always call `controller.dispose()` when the owning object is destroyed — for example in `State.dispose()` or a Riverpod `ref.onDispose` callback. Failing to dispose the controller leaves the poll timer running and may cause memory leaks.
+</Note>
+
+<CardGroup cols={2}>
+  <Card title="SteadpayConfig" icon="gear">
+    Holds the four required connection parameters (`apiBase`, `tenantSlug`, `customerId`, `publishableKey`) plus the optional `pollInterval`.
+  </Card>
+  <Card title="SteadpayState" icon="circle-info">
+    Emitted by `controller.stateStream`. Carries the current `SteadpayStatus`, a `cardUpdateUrl`, and action methods like `triggerCardUpdate`.
+  </Card>
+  <Card title="SteadpayStatus" icon="tag">
+    Enum of all valid statuses: `loading`, `active`, `warning`, `lockout`, and `error`.
+  </Card>
+  <Card title="SteadpayCallbacks" icon="bell">
+    Data class wrapping all five lifecycle callbacks. Pass an instance to `SteadpayGate` or handle stream events directly when using the controller.
+  </Card>
+</CardGroup>

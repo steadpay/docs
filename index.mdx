@@ -1,0 +1,47 @@
+---
+title: "SteadyPay: Billing Enforcement for Stripe-Powered SaaS"
+sidebarTitle: "Home"
+description: "Stop revenue leakage the moment it happens. SteadyPay intercepts failed-payment subscribers at login so they fix their card — not their churn date."
+---
+
+SteadyPay is a billing enforcement layer that sits between your Stripe account and your application. When a subscriber's payment fails, SteadyPay catches them at the highest-intent moment — their next login — and presents a non-bypassable card-update overlay. No dunning emails. No grace-period guessing. Just recovered revenue.
+
+## How it works
+
+<Steps>
+  <Step title="Stripe fires a webhook">
+    When a payment fails, Stripe sends an `invoice.payment_failed` event to SteadyPay's webhook endpoint.
+  </Step>
+  <Step title="SteadyPay updates the subscriber's status">
+    SteadyPay classifies the failure as a soft decline (retriable) or hard decline (card rejected outright) and marks the subscriber as **warning** or **lockout** accordingly.
+  </Step>
+  <Step title="Your app checks status on every session">
+    The enforcement snippet or mobile SDK calls the SteadyPay status API on each authenticated page load using the subscriber's Stripe customer ID.
+  </Step>
+  <Step title="Subscriber updates their card">
+    A **warning** subscriber sees a dismissable banner; a **lockout** subscriber sees a full-screen Stripe Payment Element overlay they cannot bypass. Either way, updating the card resolves the gate and resumes the session.
+  </Step>
+</Steps>
+
+## Explore the docs
+
+<CardGroup cols={2}>
+  <Card title="Introduction" icon="book-open" href="/introduction">
+    Learn what SteadyPay does, how it classifies declines, and which enforcement surface fits your stack.
+  </Card>
+  <Card title="Quickstart" icon="bolt" href="/quickstart">
+    Connect Stripe, add the enforcement snippet, and go live in under ten minutes.
+  </Card>
+  <Card title="Web Integration" icon="code" href="/snippet/overview">
+    Drop a single `<script>` tag into every authenticated page of your web app.
+  </Card>
+  <Card title="Mobile SDKs" icon="mobile" href="/sdks/react-native">
+    Enforce billing gates inside your React Native, Flutter, Swift, or Android app.
+  </Card>
+  <Card title="API Reference" icon="rectangle-terminal" href="/api-reference/authentication">
+    Authenticate and call SteadyPay's REST API directly from your backend.
+  </Card>
+  <Card title="Webhooks" icon="webhook" href="/webhooks/overview">
+    Receive real-time events from SteadyPay when a subscriber's status changes.
+  </Card>
+</CardGroup>

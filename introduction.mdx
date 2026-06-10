@@ -1,0 +1,82 @@
+---
+title: "Introduction to SteadyPay: Billing Enforcement for SaaS"
+sidebarTitle: "Introduction"
+description: "Understand how SteadyPay classifies failed payments, enforces subscriber gates, and which integration surface fits your web or mobile stack."
+---
+
+SteadyPay is a billing enforcement layer for Stripe-powered SaaS products. Instead of relying on dunning emails that subscribers ignore, SteadyPay catches failed payments at the highest-intent moment — when the subscriber is already inside your app — and presents a gate they must resolve before continuing.
+
+## What SteadyPay does
+
+When a subscriber's card fails, SteadyPay intercepts their next login with a non-bypassable overlay that requires them to update their card before they can use your product. The overlay loads a Stripe-hosted Payment Element directly, so card data never touches your servers. Once the subscriber updates their card, the gate dismisses and the session resumes immediately.
+
+## How it works
+
+<Steps>
+  <Step title="Stripe fires invoice.payment_failed">
+    Stripe sends the `invoice.payment_failed` webhook to SteadyPay's endpoint. SteadyPay inspects the decline code and classifies the failure as either a **soft decline** (retriable — insufficient funds, temporary network issue) or a **hard decline** (card rejected outright — blocked card, fraud flag).
+  </Step>
+  <Step title="SteadyPay updates the subscriber's status">
+    Based on the classification, SteadyPay moves the subscriber to **warning** (soft decline, retry scheduled) or **lockout** (hard decline or retries exhausted). The status is immediately available via the status API.
+  </Step>
+  <Step title="Your app checks status on every session">
+    On each authenticated page load or app launch, the enforcement snippet or mobile SDK sends the subscriber's `stripe_customer_id` to the SteadyPay status API. This call is lightweight and cached at the edge for performance.
+  </Step>
+  <Step title="Subscriber sees the appropriate enforcement surface">
+    A **warning** subscriber sees a dismissable banner prompting them to update their card. A **lockout** subscriber sees a full-screen Stripe Payment Element overlay — there is no way to dismiss it without completing a successful card update.
+  </Step>
+</Steps>
+
+## Subscriber statuses
+
+Every subscriber tracked by SteadyPay carries exactly one of three statuses at any given time:
+
+| Status | Meaning | What the subscriber sees |
+|--------|---------|--------------------------|
+| **Active** | Payment is current; no enforcement in effect | Nothing — the app loads normally |
+| **Warning** | Soft decline received; retry is scheduled | A dismissable banner prompting a card update |
+| **Lockout** | Hard decline received, or all retries exhausted | A full-screen overlay that cannot be dismissed |
+
+<Note>
+  A subscriber transitions from **warning** to **lockout** automatically if the final retry on Day 7 fails. You do not need to manage this transition manually.
+</Note>
+
+## Enforcement surfaces
+
+Choose the integration that matches your application's stack. You can use more than one if your product spans multiple platforms.
+
+| Surface | Best for |
+|---------|----------|
+| [JS snippet](/snippet/overview) | Web apps — one `<script>` tag, no build step |
+| [React Native SDK](/sdks/react-native) | React Native apps |
+| [Flutter SDK](/sdks/flutter) | Flutter apps |
+| [Swift SDK](/sdks/swift) | iOS / macOS (SwiftUI or UIKit) |
+| [Android SDK](/sdks/android) | Android (Jetpack Compose) |
+
+## Prerequisites
+
+Before you integrate SteadyPay, make sure you have the following:
+
+- A **Stripe account in live mode** — SteadyPay reads real invoice and decline data from Stripe's webhook stream.
+- A **SteadyPay account** — [sign up at steadpayhq.com/signup](https://steadpayhq.com/signup) and connect Stripe via OAuth during onboarding.
+- Your **subscriber's `stripe_customer_id`** available at login time — SteadyPay uses this identifier to look up and enforce the subscriber's billing status.
+
+## Choose your integration surface
+
+<CardGroup cols={2}>
+  <Card title="JS Snippet" icon="code" href="/snippet/overview">
+    Add one `<script>` tag to every authenticated page. No build step required.
+  </Card>
+  <Card title="React Native SDK" icon="react" href="/sdks/react-native">
+    Enforce billing gates inside your React Native application.
+  </Card>
+  <Card title="Flutter SDK" icon="mobile" href="/sdks/flutter">
+    Native enforcement for Flutter apps on iOS and Android.
+  </Card>
+  <Card title="Swift SDK" icon="apple" href="/sdks/swift">
+    SwiftUI and UIKit support for iOS and macOS.
+  </Card>
+  <Card title="Android SDK" icon="android" href="/sdks/android">
+    Jetpack Compose support for Android apps.
+  </Card>
+</CardGroup>

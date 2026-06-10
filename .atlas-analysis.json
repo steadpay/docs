@@ -1,0 +1,97 @@
+{
+  "projectType": "saas",
+  "projectName": "SteadyPay",
+  "projectDescription": "SteadyPay is a billing enforcement layer for Stripe-powered SaaS products that intercepts failed payments at the moment subscribers are inside your app, requiring a card update before they can continue.",
+  "theme": "luma",
+  "primaryColor": "#b52091",
+  "lightColor": "#ca7cb8",
+  "darkColor": "#edd9e9",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "dashboard"
+            ]
+          },
+          {
+            "group": "Web Integration",
+            "pages": [
+              "snippet/overview",
+              "snippet/events"
+            ]
+          },
+          {
+            "group": "Mobile SDKs",
+            "pages": [
+              "sdks/react-native",
+              "sdks/flutter",
+              "sdks/swift",
+              "sdks/android"
+            ]
+          },
+          {
+            "group": "Webhooks",
+            "pages": [
+              "webhooks/overview",
+              "webhooks/hmac-verification"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "API Reference",
+            "pages": [
+              "api-reference/authentication",
+              "api-reference/subscriber-status"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Non-bypassable billing gate — full-screen overlay prevents app access until card is updated",
+    "JS enforcement snippet — add one <script> tag to any web app",
+    "React Native SDK with SteadpayGate component and useSteadpay hook",
+    "Flutter SDK with SteadpayGate widget",
+    "Swift SDK for SwiftUI apps (iOS 15+ / macOS 13+)",
+    "Android SDK using Jetpack Compose (min API 26)",
+    "Three enforcement states: active, warning (dismissable banner), lockout (full-screen gate)",
+    "Automatic Stripe webhook integration for payment failure and recovery events",
+    "Smart retry schedule: Day 1, Day 3, Day 7 before lockout",
+    "Downstream webhooks with HMAC-SHA256 signature verification (Scale tier)",
+    "Fail-open design — unknown subscribers are treated as active",
+    "Customizable enforcement UI — bring your own lockout screen and warning banner",
+    "Interactive sandbox for testing without a real account"
+  ],
+  "publicApiSurface": [
+    "GET /api/subscriber-status/:tenantSlug?stripe_customer_id=cus_xxx",
+    "POST https://api.steadpayhq.com/webhooks/stripe (Stripe webhook receiver)",
+    "<script src=\"https://api.steadpayhq.com/v1/enforce.js\"> (JS snippet)",
+    "window.Steadpay.check(customerId) (manual SPA init)",
+    "CustomEvent: steadpay:lockout",
+    "CustomEvent: steadpay:warning",
+    "CustomEvent: steadpay:active",
+    "CustomEvent: steadpay:recovered",
+    "<SteadpayGate> (React Native)",
+    "useSteadpay() hook (React Native)",
+    "<SteadpaySandbox> (React Native)",
+    "SteadpayGate widget (Flutter)",
+    "SteadpayController (Flutter)",
+    "SteadpaySandbox (Flutter)",
+    "SteadpayGate view (Swift / SwiftUI)",
+    "SteadpayClient (Swift / UIKit)",
+    "SteadpayGate composable (Android / Jetpack Compose)",
+    "SteadpayController (Android)",
+    "SteadpaySandbox (Android)"
+  ]
+}

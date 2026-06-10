@@ -1,0 +1,265 @@
+---
+title: "React Native SDK: Billing Enforcement with SteadyPay"
+sidebarTitle: "React Native"
+description: "Add billing enforcement to your React Native app with a gate component that shows warnings or locks out subscribers with expired payment methods."
+---
+
+The SteadyPay React Native SDK wraps your authenticated app content in a gate that communicates with the SteadyPay API and automatically surfaces the right UI — a dismissable warning banner or a full-screen lockout overlay — based on each subscriber's billing status. No native module linking or platform-specific configuration is required.
+
+## Quick start
+
+<Steps>
+
+<Step title="Install the package">
+
+Run the following command in your project root:
+
+```sh
+npm install steadpay-react-native
+```
+
+The package relies only on React Native core components and the built-in `fetch` API, so no additional linking or pod install steps are needed.
+
+</Step>
+
+<Step title="Wrap your authenticated UI">
+
+Import `SteadpayGate` and wrap the portion of your app that should be gated — typically whatever renders after a user signs in:
+
+```tsx
+import { SteadpayGate } from 'steadpay-react-native'
+
+export function App() {
+  return (
+    <SteadpayGate
+      apiBase="https://api.steadpayhq.com"
+      tenantSlug="acme"
+      customerId={currentUser.stripeCustomerId}
+      publishableKey="pk_live_abc123"
+    >
+      <YourApp />
+    </SteadpayGate>
+  )
+}
+```
+
+`<SteadpayGate>` polls the SteadyPay API and reacts to three billing statuses:
+
+- **Active** — `<YourApp />` renders normally with no interruption
+- **Warning** — a dismissable banner appears above your content (soft decline)
+- **Lockout** — a full-screen overlay replaces all content until the subscriber updates their card (hard decline or exhausted retries)
+
+</Step>
+
+</Steps>
+
+## `<SteadpayGate>` props
+
+Pass these props to configure and customize the gate component.
+
+<ParamField path="apiBase" type="string" required>
+  Base URL of the SteadyPay API. Use `https://api.steadpayhq.com` for production.
+</ParamField>
+
+<ParamField path="tenantSlug" type="string" required>
+  Your SteadyPay tenant slug, found in the dashboard under **Settings → General**.
+</ParamField>
+
+<ParamField path="customerId" type="string" required>
+  The Stripe customer ID for the signed-in user, in the form `cus_…`. Pass this from your auth session rather than hard-coding it.
+</ParamField>
+
+<ParamField path="publishableKey" type="string" required>
+  Your SteadyPay publishable key. Safe to include in client-side code — this key cannot modify billing data.
+</ParamField>
+
+<ParamField path="pollInterval" type="number" default="600000">
+  How often (in milliseconds) the SDK polls the SteadyPay API for a status update. The minimum accepted value is `60000` (one minute). Polling more frequently than that is silently clamped.
+</ParamField>
+
+<ParamField path="onLockout" type="(customerId: string) => void">
+  Fires when the subscriber's status transitions **to** `lockout`, including on first load if the account is already locked. Use this to log analytics or trigger side-effects in your app.
+</ParamField>
+
+<ParamField path="onWarning" type="(customerId: string) => void">
+  Fires when the subscriber's status transitions **to** `warning` from a non-null prior state.
+</ParamField>
+
+<ParamField path="onActive" type="(customerId: string) => void">
+  Fires when the status transitions **to** `active` via polling — for example, after a previously failed payment eventually succeeds.
+</ParamField>
+
+<ParamField path="onRecovered" type="(customerId: string) => void">
+  Fires when the subscriber completes the card-update flow. Distinguishes a deliberate recovery action from a passive transition detected by the poller.
+</ParamField>
+
+<ParamField path="onError" type="(error: Error) => void">
+  Fires on network failure or when the API returns a `401` or `404`. The gate fails open — your app content stays visible — so a transient error never blocks a paying subscriber.
+</ParamField>
+
+<ParamField path="lockoutScreen" type="React.ReactNode">
+  Replace the built-in full-screen lockout overlay with your own component. Your component is responsible for calling `triggerCardUpdate` to open the card-update flow.
+</ParamField>
+
+<ParamField path="warningBanner" type="React.ReactNode">
+  Replace the built-in dismissable banner with your own component. Your component is responsible for calling `dismissWarning` to hide it.
+</ParamField>
+
+<ParamField path="forcedStatus" type="SteadpayStatus">
+  Force a specific status (`"active"`, `"warning"`, or `"lockout"`) for local testing. When set, no network calls are made. Remove this prop before shipping to production.
+</ParamField>
+
+<ParamField path="children" type="React.ReactNode" required>
+  The app content to render inside the gate. Shown for all statuses except `lockout`.
+</ParamField>
+
+### Render behaviour
+
+The gate uses each status to decide what to show your users.
+
+| Status | Children shown | Overlay |
+|--------|---------------|---------|
+| `loading` | Yes | None |
+| `active` | Yes | None |
+| `warning` | Yes | Warning banner (top) |
+| `lockout` | No | Full-screen lockout |
+| `error` | Yes | None (fail-open) |
+
+<Note>
+  During `loading`, your children render immediately so there is no flash of a blank screen. The overlay only appears once the API responds.
+</Note>
+
+## `useSteadpay` hook
+
+Use the `useSteadpay` hook when you need direct access to billing state — for example, to build a fully custom lockout screen or integrate with your own navigation logic.
+
+```tsx
+import { useSteadpay } from 'steadpay-react-native'
+
+function MyScreen() {
+  const { status, cardUpdateUrl, triggerCardUpdate, dismissWarning } = useSteadpay({
+    apiBase: 'https://api.steadpayhq.com',
+    tenantSlug: 'acme',
+    customerId: currentUser.stripeCustomerId,
+    publishableKey: 'pk_live_abc123',
+  })
+
+  if (status === 'lockout') {
+    return (
+      <View>
+        <Text>Payment method needs updating.</Text>
+        <Pressable onPress={triggerCardUpdate}>
+          <Text>Update now</Text>
+        </Pressable>
+      </View>
+    )
+  }
+
+  return <YourContent />
+}
+```
+
+<Note>
+  Always call `triggerCardUpdate()` rather than calling `Linking.openURL(cardUpdateUrl)` directly. If you bypass `triggerCardUpdate`, the SDK has no way to detect that the user initiated the card-update flow, so `onRecovered` will never fire. The next poll that returns `active` will fire `onActive` instead.
+</Note>
+
+### Config stability
+
+The hook treats every new config object as a full reset, which cancels the current poll cycle and starts a fresh one. If you construct the config object inline inside a component, it recreates on every render and causes unnecessary resets. Memoize the config whenever any of its values depend on component state:
+
+```tsx
+const config = useMemo(() => ({
+  apiBase: 'https://api.steadpayhq.com',
+  tenantSlug: 'acme',
+  customerId: user.stripeCustomerId,
+  publishableKey: 'pk_live_abc123',
+}), [user.stripeCustomerId])
+
+const state = useSteadpay(config)
+```
+
+## Callbacks
+
+All callbacks fire on status **transitions** only — not on every poll tick. This means `onActive` does not fire on every successful poll while the account is already active; it fires only when the status changes from something else to `active`.
+
+| Callback | Fires when |
+|----------|-----------|
+| `onLockout` | Status transitions **to** `lockout`, including on first load |
+| `onWarning` | Status transitions **to** `warning` from a non-null state |
+| `onActive` | Status transitions **to** `active` via polling |
+| `onRecovered` | Subscriber completes the card update flow |
+| `onError` | Network failure or `401`/`404` response |
+
+## Testing
+
+### Force a status (no network calls)
+
+Use the `forcedStatus` prop on `<SteadpayGate>` to lock the component into a specific state during development. No API calls are made when this prop is present.
+
+```tsx
+<SteadpayGate {...config} forcedStatus="lockout">
+  <App />
+</SteadpayGate>
+```
+
+<Warning>
+  Remove `forcedStatus` before shipping to production. Leaving it in will prevent real billing statuses from ever being fetched.
+</Warning>
+
+### Interactive sandbox
+
+`<SteadpaySandbox>` lets you toggle between all billing states at runtime without a real SteadyPay account or Stripe customer. Import it in your dev entry point and swap it out before release:
+
+```tsx
+import { SteadpaySandbox } from 'steadpay-react-native'
+
+export function DevScreen() {
+  return (
+    <SteadpaySandbox
+      onLockout={(id) => console.log('locked out:', id)}
+      onWarning={(id) => console.log('warning:', id)}
+      onActive={(id) => console.log('active:', id)}
+    >
+      <YourApp />
+    </SteadpaySandbox>
+  )
+}
+```
+
+A `DEV` badge appears in the bottom-right corner of the screen. Tap it to open a control sheet with state pills for switching between `active`, `warning`, and `lockout`, plus a live callback log showing every fired event.
+
+<Warning>
+  Remove `<SteadpaySandbox>` before shipping to production. It makes no API calls and will never reflect real subscriber billing state.
+</Warning>
+
+<Tip>
+  You can use `<SteadpaySandbox>` during design reviews or QA to demonstrate every billing state to stakeholders without needing a test Stripe account.
+</Tip>
+
+## TypeScript
+
+All public types are exported from the package root. Import them alongside your component and hook imports:
+
+```typescript
+import type {
+  SteadpayConfig,
+  SteadpayState,
+  SteadpayStatus,
+  SteadpayGateProps,
+} from 'steadpay-react-native'
+```
+
+<CardGroup cols={2}>
+  <Card title="SteadpayConfig" icon="gear">
+    The configuration object accepted by `<SteadpayGate>` and `useSteadpay`. Contains `apiBase`, `tenantSlug`, `customerId`, `publishableKey`, and `pollInterval`.
+  </Card>
+  <Card title="SteadpayState" icon="circle-info">
+    The full state object returned by `useSteadpay`. Includes `status`, `cardUpdateUrl`, `triggerCardUpdate`, and `dismissWarning`.
+  </Card>
+  <Card title="SteadpayStatus" icon="tag">
+    Union type of all valid status strings: `"loading" | "active" | "warning" | "lockout" | "error"`.
+  </Card>
+  <Card title="SteadpayGateProps" icon="rectangle-list">
+    Full props interface for `<SteadpayGate>`, extending `SteadpayConfig` with callbacks and UI override fields.
+  </Card>
+</CardGroup>

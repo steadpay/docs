@@ -1,0 +1,135 @@
+---
+title: "Install and Configure the SteadyPay JS Enforcement Snippet"
+sidebarTitle: "JS Snippet"
+description: "Drop one script tag into every authenticated page to enforce billing gates — no backend changes, build steps, or server deploys required."
+---
+
+The SteadyPay enforcement snippet is a lightweight JavaScript tag you add to every authenticated page in your web app. Once loaded, it fetches your subscriber's billing status from SteadyPay and automatically renders the appropriate UI — a soft-decline warning banner, a full-screen lockout gate, or nothing at all. You control the behavior entirely through HTML attributes on the script tag.
+
+## Installation
+
+Place the snippet inside `<body>` on every authenticated page, **after** you have confirmed the user is logged in. Do not add it to public pages.
+
+```html
+<script
+  src="https://api.steadpayhq.com/v1/enforce.js"
+  data-tenant-slug="acme"
+  data-publishable-key="pk_live_abc123"
+  data-customer-id="cus_xxxxxxxxxxxxxxxx"
+></script>
+```
+
+On load, the snippet fetches the subscriber's billing status and renders the appropriate UI. No configuration beyond the three required attributes is needed for most integrations.
+
+<Note>
+  Always add the snippet **after** authentication is confirmed. Loading it on unauthenticated pages will produce a missing customer ID error.
+</Note>
+
+## Attributes
+
+The snippet is configured entirely through `data-*` attributes on the script tag. The table below lists every supported attribute.
+
+| Attribute | Required | Description |
+|---|---|---|
+| `data-tenant-slug` | ✓ | Your SteadyPay tenant slug, visible in the dashboard |
+| `data-publishable-key` | ✓ | Your SteadyPay publishable key (`pk_live_…` or `pk_test_…`) |
+| `data-customer-id` | | Stripe customer ID (`cus_…`) for auto-init. Omit to call `window.Steadpay.check(cid)` manually |
+| `data-api-base` | | Base URL of the SteadyPay API. Defaults to the SteadyPay-hosted API |
+| `data-gate-base` | | Origin for the gate iframe. Must be a SteadyPay-controlled origin |
+| `data-locale` | | UI locale — `en`, `fr`, `es`, `de`. Defaults to `navigator.language`, fallback `en` |
+
+<Tip>
+  Use `pk_test_…` keys in your staging environment. The test key connects to SteadyPay's sandbox and will never affect live subscribers.
+</Tip>
+
+## Manual Init (SPAs)
+
+Single-page apps often resolve the authenticated user's Stripe customer ID asynchronously — for example, after an auth redirect completes. In that case, omit `data-customer-id` from the script tag and call `window.Steadpay.check()` yourself once the ID is available.
+
+<Steps>
+  <Step title="Add the snippet without data-customer-id">
+    Include the script tag in your app shell, leaving out `data-customer-id`:
+
+    ```html
+    <script
+      src="https://api.steadpayhq.com/v1/enforce.js"
+      data-tenant-slug="acme"
+      data-publishable-key="pk_live_abc123"
+    ></script>
+    ```
+  </Step>
+
+  <Step title="Call check() once the customer ID is available">
+    After authentication resolves and you have the Stripe customer ID, trigger the enforcement check manually:
+
+    ```javascript
+    // After the user is authenticated and you have their Stripe customer ID:
+    window.Steadpay.check('cus_xxxxxxxxxxxxxxxx')
+    ```
+  </Step>
+
+  <Step title="Re-call check() on user change">
+    If your app supports account switching, call `Steadpay.check()` again with the new customer ID whenever the signed-in user changes:
+
+    ```javascript
+    // On account switcher selection:
+    window.Steadpay.check('cus_yyyyyyyyyyyyyy')
+    ```
+  </Step>
+</Steps>
+
+## Enforcement Behaviour
+
+The snippet maps your subscriber's billing status to one of three states and renders the appropriate UI for each.
+
+<Tabs>
+  <Tab title="Active">
+    No UI is shown. The subscriber's session continues normally without any interruption. The snippet continues polling silently in the background every 10 minutes.
+  </Tab>
+
+  <Tab title="Warning (Soft Decline)">
+    A dismissable amber banner appears fixed at the top of the viewport:
+
+    - Displays a localized message in the subscriber's language
+    - Includes an **Update card** CTA if `card_update_url` is configured in your dashboard
+    - Dismissable by the subscriber — but reappears on the next page load
+    - Resolves automatically when polling detects the issue is cleared
+
+    <Note>
+      The warning banner is intentionally non-blocking. Subscribers can continue using your app while the payment issue is pending.
+    </Note>
+  </Tab>
+
+  <Tab title="Lockout (Hard Decline)">
+    A full-screen iframe overlay covers the entire viewport:
+
+    - Rendered at `z-index: 2147483647` — above all app content
+    - Sandboxed with `allow-scripts allow-same-origin allow-popups allow-forms` — the gate page cannot access the parent DOM or storage
+    - Contains a Stripe Payment Element for immediate card update
+    - Dismisses automatically once the subscriber completes the card update flow
+
+    <Warning>
+      Once a subscriber reaches lockout, they cannot interact with your app until they update their payment method. Confirm your `card_update_url` and Stripe Payment Element are correctly configured before going live.
+    </Warning>
+  </Tab>
+</Tabs>
+
+## Polling
+
+After the initial check, the snippet polls the SteadyPay status API every **10 minutes** to detect status changes without requiring a page reload.
+
+<CardGroup cols={3}>
+  <Card title="Tab visible" icon="eye">
+    Polling runs on schedule every 10 minutes while the browser tab is in the foreground.
+  </Card>
+  <Card title="Tab hidden" icon="eye-slash">
+    Polling pauses automatically when the subscriber switches away from your tab, preserving network and battery.
+  </Card>
+  <Card title="After recovery" icon="circle-check">
+    Once a subscriber recovers from lockout, the snippet goes idle for the remainder of the session and stops polling.
+  </Card>
+</CardGroup>
+
+## Double-Load Protection
+
+The snippet is safe to include via tag managers or dynamic injection — it guards against being initialized more than once per page. If the script tag is encountered multiple times, only the first load takes effect and subsequent loads are silently ignored.
